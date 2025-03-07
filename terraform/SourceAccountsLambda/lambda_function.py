@@ -61,7 +61,10 @@ import datetime
 LOG_GROUP_NAME = os.getenv("LOG_GROUP_NAME")
 TARGET_SUBSCRIPTION_FILTER = os.getenv("TARGET_SUBSCRIPTION_FILTER")
 DESTINATION_ARN = os.getenv("DESTINATION_ARN")
-AWS_REGION = os.getenv("AWS_REGION", "us-west-1")  # Default region if not set
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")  # Default region if not set
+REMOVE_SUBSCRIPTION = os.getenv("REMOVE_SUBSCRIPTION", "false").lower() == "true"  # Remove subscription filter if set to "true"
+DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"  # Dry run mode
+
 
 # AWS Clients
 logs_client = boto3.client("logs")
@@ -80,6 +83,10 @@ def lambda_handler(event, context):
             )["subscriptionFilters"]
             
             existing_filters = [f["filterName"] for f in filters]
+
+            if REMOVE_SUBSCRIPTION:
+                remove_subscription_filter(log_group_name, existing_filters)
+                continue
             
             if TARGET_SUBSCRIPTION_FILTER in existing_filters:
                 log_status(log_group_name, "Compliant", "Already has target filter")
@@ -126,6 +133,18 @@ def apply_subscription_filter(log_group_name):
         )
         log_status(log_group_name, "Updated", "Subscription filter applied")
     
+    except Exception as e:
+        log_error(log_group_name, str(e))
+
+def remove_subscription_filter(log_group_name, existing_filters):
+    """Removes the subscription filter if it exists"""
+    try:
+        for filter_name in existing_filters:
+            logs_client.delete_subscription_filter(
+                logGroupName=log_group_name,
+                filterName=filter_name
+            )
+        log_status(log_group_name, "Removed", "Subscription filter removed")
     except Exception as e:
         log_error(log_group_name, str(e))
 
@@ -191,4 +210,3 @@ def log_error(context, error_message):
 def get_log_group_link(log_group_name):
     """Generates a clickable link to the CloudWatch log group."""
     return f"https://{AWS_REGION}.console.aws.amazon.com/cloudwatch/home?region={AWS_REGION}#logsV2:log-groups/log-group/{log_group_name.replace('/', '$252F')}"
-
